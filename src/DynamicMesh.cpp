@@ -12,20 +12,36 @@ DynamicMesh::DynamicMesh()
 	CreateNewVertexBuffer({
 		{ Gl::ShaderDataType::Float3, "position" }
 	});
+
+	m_VertBufferParamLength = 1;
 }
 
-DynamicMesh::DynamicMesh(const std::initializer_list<Gl::BufferElement>& layout)
+DynamicMesh::DynamicMesh(const Gl::BufferLayout& layout)
 	:
 	m_VertArray(std::make_unique<Gl::VertexArray>())
 {
 	m_IdxBuffer = Gl::IndexBuffer::Create();
 	m_VertArray->SetIndexBuffer(m_IdxBuffer);
 	CreateNewVertexBuffer(layout);
+	m_VertBufferParamLength = layout.GetElements().size();
 }
 
-uint32_t DynamicMesh::CreateNewVertexBuffer(const std::initializer_list<Gl::BufferElement>& layout)
+DynamicMesh::DynamicMesh(const DynamicMesh& o)
 {
-	auto buff = Gl::VertexBuffer::Create({ layout });
+	m_VertBufferParamCount = o.m_VertBufferParamCount;
+	m_VertBufferParamLength = o.m_VertBufferParamLength;
+	m_DrawType = o.m_DrawType;
+	m_VertCount = o.m_VertCount;
+	m_ElementCount = o.m_ElementCount;
+
+	m_VertexBuffers.clear();
+	m_VertexData.clear();
+}
+
+
+uint32_t DynamicMesh::CreateNewVertexBuffer(const Gl::BufferLayout& layout)
+{
+	auto buff = Gl::VertexBuffer::Create(layout);
 
 	m_VertexData.emplace_back();
 
@@ -45,9 +61,9 @@ void DynamicMesh::AllocateIndexBuffer(size_t size)
 	m_IndexData.reserve(size);
 }
 
-void DynamicMesh::SetIndexBuffer(std::shared_ptr<Gl::IndexBuffer> idxBuff)
+void DynamicMesh::SetDrawType(GLint drawType)
 {
-	//m_IdxBuffer = std::move(idxBuff);
+	m_DrawType = drawType;
 }
 
 void DynamicMesh::AddVertexData(uint32_t vertIdx, std::vector<float>& data)
@@ -83,6 +99,10 @@ void DynamicMesh::FlushVertexData(uint32_t vertIdx)
 
 void DynamicMesh::FlushIndexData()
 {
+	if (m_IndexData.empty())
+	{
+		return; 
+	}
 	m_IdxBuffer->SetData(m_IndexData, m_ElementCount);
 }
 
@@ -99,16 +119,16 @@ void DynamicMesh::Flush()
 void DynamicMesh::DrawIndexed() const
 {
 	m_VertArray->Bind();
-	//m_IdxBuffer->Bind();
-	glDrawElements(GL_TRIANGLES, m_ElementCount, GL_UNSIGNED_INT, 0);
+	glDrawElements(m_DrawType, m_ElementCount, GL_UNSIGNED_INT, 0);
 }
 
 void DynamicMesh::DrawArrays() const
 {
 	m_VertArray->Bind();
-	glDrawArrays(GL_TRIANGLES, 0, m_VertCount);
+	glDrawArrays(m_DrawType, 0, m_VertCount);
 }
 
+// Overwrites the selected draw type and renders data with the draw type from parameter
 void DynamicMesh::DrawArrays(GLint type) const
 {
 	m_VertArray->Bind();

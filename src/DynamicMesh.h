@@ -11,19 +11,18 @@
 // If not passed a layout, assumed layout is a vec3 float positions
 // Supports only floating point vertices
 // TODO: Test Indexed Draw
-// Only rendering triangles
 
 class DynamicMesh
 {
 public:
 	DynamicMesh();
-	DynamicMesh(const std::initializer_list<Gl::BufferElement>& layout);
+	DynamicMesh(const Gl::BufferLayout& layout);
+	DynamicMesh(const DynamicMesh& o);
 
-	uint32_t CreateNewVertexBuffer(const std::initializer_list<Gl::BufferElement>& layout);
+	uint32_t CreateNewVertexBuffer(const Gl::BufferLayout& layout);
 	void AllocateVertexBuffer(uint32_t vertIdx, size_t size);
 	void AllocateIndexBuffer(size_t size);
-	void SetIndexBuffer(std::shared_ptr<Gl::IndexBuffer>);
-
+	void SetDrawType(GLint drawType);
 	void AddVertexData(uint32_t vertIdx, std::vector<float>& data);
 	void AddVertexData(std::vector<float>& data);
 
@@ -43,7 +42,7 @@ public:
 	uint32_t AddVertex(uint32_t idx, const T& vert)
 	{
 		static_assert(IsVertexFloat<T>());
-		constexpr int VertSize = GetVertexSize<T>();
+		static constexpr int VertSize = GetVertexSize<T>();
 		assert(idx < m_VertexData.size());
 
 		if constexpr (VertSize == 1)
@@ -69,8 +68,9 @@ public:
 			m_VertexData[idx].push_back(vert.w);
 		}
 
-		if (idx == 0)
+		if (++m_VertBufferParamCount == m_VertBufferParamLength && idx == 0)
 		{
+			m_VertBufferParamCount = 0;
 			return m_VertCount++;
 		}
 
@@ -167,11 +167,16 @@ public:
 	void ClearBuffers();
 private:
 	//std::vector<std::array<std::vector<float>, m_MaxTypes>> m_VertexData;
-	std::vector<std::vector<float>> m_VertexData;
-	std::vector<uint32_t> m_IndexData;
+	int m_VertBufferParamCount = 0;
+	int m_VertBufferParamLength = 0;
+	GLint m_DrawType{ GL_TRIANGLES };
 	uint32_t m_VertCount{ 0 };
 	uint32_t m_ElementCount{ 0 }; // Store element count in case we destroy the buffer data
+
 	std::vector<std::shared_ptr<Gl::VertexBuffer>> m_VertexBuffers;
 	std::shared_ptr<Gl::IndexBuffer> m_IdxBuffer;
 	std::unique_ptr<Gl::VertexArray> m_VertArray;
+
+	std::vector<std::vector<float>> m_VertexData;
+	std::vector<uint32_t> m_IndexData;
 };
