@@ -4,8 +4,11 @@ layout (location = 1) in vec3 aClr;
 
 out vec3 oClr;
 
+uniform mat4 transform;
+
 void main()
 {
-    gl_Position = vec4(aPos.xyz, 1.f);
+    vec4 worldPos = transform * vec4(aPos.xyz, 1.f);
+    gl_Position = worldPos;
     oClr = aClr;
 }
