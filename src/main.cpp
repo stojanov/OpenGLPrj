@@ -76,6 +76,69 @@ inline void CreateQuad(const DMeshPtr& mesh, glm::vec3& clr, std::array<glm::vec
     mesh->ConnectVertices(p2, p3, p0);
 }
 
+inline void CreateColoredQuad(const DMeshPtr& mesh, std::array<glm::vec3, 4> clr, std::array<glm::vec3, 4> points)
+{
+    mesh->AddVertex(points[0]);
+    auto p0 = mesh->AddVertex(clr[0]);
+    mesh->AddVertex(points[1]);
+    auto p1 = mesh->AddVertex(clr[1]);
+    mesh->AddVertex(points[2]);
+    auto p2 = mesh->AddVertex(clr[2]);
+    mesh->AddVertex(points[3]);
+    auto p3 = mesh->AddVertex(clr[3]);
+
+    mesh->ConnectVertices(p0, p1, p2);
+    mesh->ConnectVertices(p2, p3, p0);
+}
+
+inline DMeshPtr Generate3DCube(std::array<glm::vec3, 8> clrs)
+{
+    DMeshPtr mesh = std::make_unique<DynamicMesh>(Gl::BufferLayout{
+        { Gl::ShaderDataType::Float3, "position" },
+        { Gl::ShaderDataType::Float3, "color" }
+    });
+
+    for (int i = 0; i < 2; i++)
+    {
+        float z = i == 0 ? 1.f : -1.f;
+
+        CreateColoredQuad(mesh, { clrs[0], clrs[1], clrs[2], clrs[3] }, {
+            glm::vec3{ -1.f,  1.f, z },
+            glm::vec3{  1.f,  1.f, z },
+            glm::vec3{  1.f, -1.f, z },
+            glm::vec3{ -1.f, -1.f, z },
+        });
+    }
+
+    for (int i = 0; i < 2; i++)
+    {
+        float x = i == 0 ? -1.f : 1.f;
+
+        CreateColoredQuad(mesh, { clrs[0], clrs[1], clrs[2], clrs[3] }, {
+            glm::vec3{ x,  1.f,  1.f },
+            glm::vec3{ x,  1.f, -1.f },
+            glm::vec3{ x, -1.f, -1.f },
+            glm::vec3{ x, -1.f,  1.f },
+        });
+    }
+
+    for (int i = 0; i < 2; i++)
+    {
+        float y = i == 0 ? -1.f : 1.f;
+
+        CreateColoredQuad(mesh, { clrs[0], clrs[1], clrs[2], clrs[3] }, {
+            glm::vec3{ -1.f, y,  1.f },
+            glm::vec3{ -1.f, y, -1.f },
+            glm::vec3{  1.f, y, -1.f },
+            glm::vec3{  1.f, y,  1.f },
+        });
+    }
+
+    mesh->Flush();
+
+    return mesh;
+}
+
 int main(int argc, char * argv[]) {
 
     // Load GLFW and Create a Window
@@ -100,12 +163,7 @@ int main(int argc, char * argv[]) {
 
     auto shader = Gl::Shader::FromFiles("shaders/triangle.vert", "shaders/triangle.frag");
     auto checkerShader = Gl::Shader::FromFiles("shaders/checker.vert", "shaders/checker.frag");
-
-    const auto piSection = PI2 / 5;
-
-    const auto pacman = CreatePie({ 1.f, 1.f, 0.f }, { 0.f, 0.f }, 120, piSection, piSection * 5, 0.f, 0.25f);
-
-    bool keys[4] = { 0, 0, 0, 0 };
+    auto shader3d = Gl::Shader::FromFiles("shaders/3d_obj.vert", "shaders/3d_obj.frag");
 
     const float moveSpeed = 1.f;
 
@@ -114,7 +172,30 @@ int main(int argc, char * argv[]) {
     float dt = 0.016;
     // Rendering Loop
     glm::vec3 pos{ 0.f, 0.f, 0.f };
-    float rotation = 0.f;
+
+    auto cube = Generate3DCube({
+        glm::vec3{ 1.f, 0.f, 0.f },
+        glm::vec3{ 0.f, 1.f, 0.f },
+        glm::vec3{ 1.f, 0.f, 1.f },
+        glm::vec3{ 1.f, 0.f, 0.f },
+        glm::vec3{ 0.f, 1.f, 0.f },
+        glm::vec3{ 1.f, 0.f, 0.f },
+        glm::vec3{ 0.f, 1.f, 0.f },
+        glm::vec3{ 0.f, 1.f, 0.f },
+    });
+
+    glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 10.0f);
+    glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
+    glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+
+    glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)mWidth / (float)mHeight, 0.1f, 100.0f);
+    glm::mat4 transform = glm::mat4(1.f);
+
+    glEnable(GL_DEPTH_TEST);
+
+    glm::vec2 rotSpeed = { 25.f, 30.f };
+
     while (glfwWindowShouldClose(mWindow) == false) 
     {
         auto now = std::chrono::high_resolution_clock::now();
@@ -126,79 +207,19 @@ int main(int argc, char * argv[]) {
         if (glfwGetKey(mWindow, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(mWindow, true);
 
-        glm::mat4 transform = glm::mat4(1.f);
+        transform = glm::rotate(transform, glm::radians(rotSpeed.x * dt), glm::vec3{ 1.f, 0.f, 0.f });
+        transform = glm::rotate(transform, glm::radians(rotSpeed.y * dt), glm::vec3{ 0.f, 1.f, 0.f });
 
-
-        if (!keys[0] && glfwGetKey(mWindow, GLFW_KEY_LEFT) == GLFW_PRESS)
-        {
-            rotation = 90.f;
-            keys[0] = true;
-        }
-        if (!keys[1] && glfwGetKey(mWindow, GLFW_KEY_RIGHT) == GLFW_PRESS)
-        {
-            rotation = -90.f;
-            keys[1] = true;
-        }
-        if (!keys[2] && glfwGetKey(mWindow, GLFW_KEY_UP) == GLFW_PRESS)
-        {
-            rotation = 0.f;
-            keys[2] = true;
-        }
-        if (!keys[3] && glfwGetKey(mWindow, GLFW_KEY_DOWN) == GLFW_PRESS)
-        {
-            rotation = 180.f;
-            keys[3] = true;
-        }
-
-        if (keys[0] && glfwGetKey(mWindow, GLFW_KEY_LEFT) == GLFW_RELEASE)
-        {
-            keys[0] = false;
-        }
-        if (keys[1] && glfwGetKey(mWindow, GLFW_KEY_RIGHT) == GLFW_RELEASE)
-        {
-            keys[1] = false;
-        }
-        if (keys[2] && glfwGetKey(mWindow, GLFW_KEY_UP) == GLFW_RELEASE)
-        {
-            keys[2] = false;
-        }
-        if (keys[3] && glfwGetKey(mWindow, GLFW_KEY_DOWN) == GLFW_RELEASE)
-        {
-            keys[3] = false;
-        }
-
-        glm::vec3 movePos{ 0.f, 0.f, 0.f };
-
-        if (keys[0])
-        {
-            movePos.x = -1.f;
-        }
-        if (keys[1])
-        {
-            movePos.x = 1.f;
-        }
-        if (keys[2])
-        {
-            movePos.y = 1.f;
-        }
-        if (keys[3])
-        {
-            movePos.y = -1.f;
-        }
-
-        pos += movePos * moveSpeed * dt;
-
-        transform = glm::translate(transform, pos);
-        transform = glm::rotate(transform, glm::radians(52.f + rotation), { 0.f, 0.f, 1.f });
-        
         // Background Fill Color
         glClearColor(0.25f, 0.25f, 0.25f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        shader.Bind();
-        shader.SetMat4("transform", transform);
-        pacman->DrawArrays();
+        shader3d.Bind();
+        shader3d.SetMat4("transform", transform);
+        shader3d.SetMat4("view", view);
+        shader3d.SetMat4("proj", proj);
 
+        cube->DrawIndexed();
 
         // Flip Buffers and Draw
         glfwSwapBuffers(mWindow);
