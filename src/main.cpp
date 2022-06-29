@@ -3,17 +3,17 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <array>
+#include <iomanip>
+#include <chrono>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-#include <array>
-#include <iomanip>
 
 #include "StaticMesh.h"
 #include "DynamicMesh.h"
 #include "Shader.h"
-
-#include <chrono>
+#include "FPSCamera.h"
 
 template<typename T>
 using Ptr = std::unique_ptr<T>;
@@ -139,6 +139,30 @@ inline DMeshPtr Generate3DCube(std::array<glm::vec3, 8> clrs)
     return mesh;
 }
 
+inline DMeshPtr GeneratePlane()
+{
+    DMeshPtr mesh = std::make_unique<DynamicMesh>(Gl::BufferLayout{
+        { Gl::ShaderDataType::Float3, "position" },
+        { Gl::ShaderDataType::Float3, "color" }
+    });
+
+    CreateColoredQuad(mesh, {
+        glm::vec3{ 1.f, 0.f, 1.f },
+        glm::vec3{ 1.f, 0.f, 1.f },
+        glm::vec3{ 0.f, 1.f, 0.f },
+        glm::vec3{ 0.f, 1.f, 0.f },
+    }, {
+        glm::vec3{ -10.f, -2.f, -10.f},
+        glm::vec3{ -10.f, -2.f, 10.f },
+        glm::vec3{ 10.f, -2.f, 10.f },
+        glm::vec3{ 10.f, -2.f, -10.f },
+    });
+
+    mesh->Flush();
+
+    return mesh;
+}
+
 int main(int argc, char * argv[]) {
 
     // Load GLFW and Create a Window
@@ -184,17 +208,34 @@ int main(int argc, char * argv[]) {
         glm::vec3{ 0.f, 1.f, 0.f },
     });
 
-    glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 10.0f);
-    glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
-    glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+    auto plane = GeneratePlane();
 
-    glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)mWidth / (float)mHeight, 0.1f, 100.0f);
-    glm::mat4 transform = glm::mat4(1.f);
+    Camera cam(45, mWidth, mHeight, 0.1f, 1000.f);
+
+    cam.SetPos({ 0.f, 0.f, -10.f });
 
     glEnable(GL_DEPTH_TEST);
 
     glm::vec2 rotSpeed = { 25.f, 30.f };
+
+    glm::mat4 transform{ 1.f };
+
+
+    float camSpeed = 5.f;
+    float camRotationSpeed = 5.f;
+
+    double xpos, ypos;
+    glfwGetCursorPos(mWindow, &xpos, &ypos);
+
+    double prevMouseX = xpos;
+    double prevMouseY = ypos;
+    glfwSetInputMode(mWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    bool crouching = false;
+    bool jumping = false;
+
+    float jumpVel = 0.f;
+    float jumpFriction = 50.f;
 
     while (glfwWindowShouldClose(mWindow) == false) 
     {
@@ -203,9 +244,80 @@ int main(int argc, char * argv[]) {
         last = now;
 
         float dt = sec * 1.f / 1000;
+        glfwGetCursorPos(mWindow, &xpos, &ypos);
+
+        if (glfwGetKey(mWindow, GLFW_KEY_SPACE) == GLFW_PRESS)
+        {
+            if (!jumping)
+            { 
+                jumping = true;
+                jumpVel = 20.f;
+            }
+        }
+
+        if (glfwGetKey(mWindow, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
+        {
+            if (!crouching && !jumping)
+            {
+                cam.OffsetPosition({ 0.f, -1.f, 0.f });
+                crouching = true;
+            }
+        }
+
+        if (glfwGetKey(mWindow, GLFW_KEY_LEFT_CONTROL) == GLFW_RELEASE)
+        {
+            if (crouching)
+            {
+                cam.OffsetPosition({ 0.f, 1.f, 0.f });
+                crouching = false;
+            }
+        }
 
         if (glfwGetKey(mWindow, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        {
             glfwSetWindowShouldClose(mWindow, true);
+        }
+
+        if (glfwGetKey(mWindow, GLFW_KEY_W) == GLFW_PRESS)
+        {
+            cam.MoveZ(camSpeed * dt);
+        }
+
+        if (glfwGetKey(mWindow, GLFW_KEY_S) == GLFW_PRESS)
+        {
+            cam.MoveZ(-1.f * camSpeed * dt);
+        }
+
+        if (glfwGetKey(mWindow, GLFW_KEY_A) == GLFW_PRESS)
+        {
+            cam.MoveX(-1.f * camSpeed * dt);
+        }
+
+        if (glfwGetKey(mWindow, GLFW_KEY_D) == GLFW_PRESS)
+        {
+            cam.MoveX(camSpeed * dt);
+        }
+
+        double dMouseX = xpos - prevMouseX;
+        double dMouseY = ypos - prevMouseY;
+
+        cam.Rotate({ dMouseX * camRotationSpeed * dt, dMouseY * camRotationSpeed * dt });
+
+        if (jumping)
+        {
+            auto campos = cam.GetPos();
+
+            if (campos.y <= 0.f)
+            {
+                jumping = false;
+            }
+
+            cam.OffsetPosition({ 0.f, jumpVel * dt, 0.f });
+
+            jumpVel -= jumpFriction * dt;
+        }
+
+        cam.Update(dt);
 
         transform = glm::rotate(transform, glm::radians(rotSpeed.x * dt), glm::vec3{ 1.f, 0.f, 0.f });
         transform = glm::rotate(transform, glm::radians(rotSpeed.y * dt), glm::vec3{ 0.f, 1.f, 0.f });
@@ -215,17 +327,26 @@ int main(int argc, char * argv[]) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         shader3d.Bind();
+
+        shader3d.SetMat4("transform", glm::mat4(1.f));
+        shader3d.SetMat4("view", cam.GetView());
+        shader3d.SetMat4("proj", cam.GetProj());
+        plane->DrawIndexed();
+
         shader3d.SetMat4("transform", transform);
-        shader3d.SetMat4("view", view);
-        shader3d.SetMat4("proj", proj);
+        shader3d.SetMat4("view", cam.GetView());
+        shader3d.SetMat4("proj", cam.GetProj());
 
         cube->DrawIndexed();
 
         // Flip Buffers and Draw
         glfwSwapBuffers(mWindow);
         glfwPollEvents();
+        prevMouseX = xpos;
+        prevMouseY = ypos;
     }
 
+    glfwSetInputMode(mWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     glfwDestroyWindow(mWindow);
 	glfwTerminate();
     return EXIT_SUCCESS;
